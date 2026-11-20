@@ -1,0 +1,92 @@
+name: 每日同步 · 行业轮动增强策略接口
+
+# 每日 06:00（北京时间 / UTC 22:00）自动跑：抓数 → 模型回放 → 生成 data/ 接口 → 提交 → 触发 Pages 部署。
+# 周末/节假日无新交易日时由「指纹幂等」自动 skipped，不产生无谓提交。
+on:
+  schedule:
+    - cron: '0 22 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '同步模式：live=抓数+回放，snapshot=仅重建接口'
+        required: false
+        default: 'live'
+        type: choice
+        options: [live, snapshot]
+      force:
+        description: '忽略指纹强制重写接口'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: ir-daily-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 准备 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 执行每日同步（7 步编排）
+        id: sync
+        shell: bash
+        run: |
+          MODE="${{ github.event.inputs.mode || 'live' }}"
+          FORCE=""
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then FORCE="--force"; fi
+          echo "mode=$MODE force=$FORCE"
+          python scripts/sync_daily.py --mode "$MODE" $FORCE | tee /tmp/sync.log
+          echo "sync_tail<<EOF" >> "$GITHUB_OUTPUT"
+          tail -3 /tmp/sync.log >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: 停更巡检（一行中文汇报）
+        run: |
+          python scripts/check_freshness.py --threshold 26 | tee /tmp/fresh.txt || true
+          cat /tmp/fresh.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '--- 本次同步 ---' >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' "${{ steps.sync.outputs.sync_tail }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 提交接口与行情快照变更
+        id: commit
+        shell: bash
+        run: |
+          git config user.name  "ir-sync-bot"
+          git config user.email "ir-sync-bot@users.noreply.github.com"
+          git add data/ strategy/data/raw/ strategy/output5/
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "指纹未变化或幂等 skipped，无文件变更。"
+          else
+            git commit -m "chore(data): 每日同步 行业轮动增强策略接口 $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 触发 GitHub Pages 部署
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 用 workflow_dispatch 显式触发，避免依赖「GITHUB_TOKEN 的 push 不触发其它工作流」限制
+          gh workflow run deploy_pages.yml --ref "${{ github.ref_name }}" || \
+            echo "部署触发失败（若为 fork 或权限不足，请在 Pages 设置中检查），可手动运行 deploy_pages.yml"

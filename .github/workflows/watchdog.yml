@@ -1,0 +1,51 @@
+name: 停更巡检与自动重启 · 行业轮动增强看板
+
+# 每 4 小时巡检一次：若距上次同步超过 26 小时，说明云端同步链停摆，
+# 自动 workflow_dispatch 重启 daily_sync.yml，并把一行中文汇报写入 Actions 摘要。
+on:
+  schedule:
+    - cron: '30 */4 * * *'
+  workflow_dispatch:
+    inputs:
+      threshold:
+        description: '停摆阈值（小时）'
+        required: false
+        default: '26'
+        type: string
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 准备 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 巡检并按需下发重启指令
+        id: check
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          THR="${{ github.event.inputs.threshold || '26' }}"
+          set +e
+          python scripts/check_freshness.py --threshold "$THR" --restart | tee /tmp/fresh.txt
+          RC=$?
+          set -e
+          cat /tmp/fresh.txt >> "$GITHUB_STEP_SUMMARY"
+          echo "fresh_rc=$RC" >> "$GITHUB_OUTPUT"
+          if [ "$RC" = "2" ]; then
+            echo "⚠️ 判定停摆，已下发 workflow_dispatch 重启指令" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$RC" = "1" ]; then
+            echo "⚠️ 接口异常，请检查 data/ 完整性" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "✅ 同步链正常，无需重启" >> "$GITHUB_STEP_SUMMARY"
+          fi

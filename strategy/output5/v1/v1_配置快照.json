@@ -1,0 +1,34 @@
+{
+  "version": "v1.0",
+  "name": "风格自适应动量轮动 + 回撤断路器（候选B）",
+  "released": "2026-11-19",
+  "data_basis": "全收益指数口径（A500价格指数）",
+  "assets": [
+    "沪深300",
+    "中证500",
+    "中证1000",
+    "科创50",
+    "成长100",
+    "价值100",
+    "A500"
+  ],
+  "shelter_etf": "511010 国债ETF",
+  "params": {
+    "K": 1,
+    "freq": 10,
+    "cost_bps": 8,
+    "hedge": 0.5,
+    "style_tilt": 0.5,
+    "regime_in_score": true,
+    "fit_gate": "er_dd",
+    "gate_floor": 0.2,
+    "dd_crash_th": -0.18,
+    "cb_mode": "cooldown",
+    "cb_dd_start": -0.1,
+    "cb_share": 1.0,
+    "cb_days": 20,
+    "cb_reset_peak": true
+  },
+  "execution": "T日收盘出信号，T+1收盘执行，含8bps单边成本，零前视",
+  "note": "候选B：近三年回撤改善最全面且ETF实盘期转正；时间外年化不稀释。"
+}

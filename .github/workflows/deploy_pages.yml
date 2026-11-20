@@ -1,0 +1,51 @@
+name: 部署看板 · GitHub Pages
+
+# 只发布静态页 index.html + 同源接口 data/，不发布策略源码与行情快照。
+# 由 daily_sync.yml 在提交变更后显式 workflow_dispatch 触发；也支持手动推送/手动运行。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'data/**'
+      - '.github/workflows/deploy_pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 组装同源发布目录
+        run: |
+          rm -rf _site && mkdir -p _site
+          cp index.html _site/
+          cp -r data _site/
+          echo "发布文件："
+          find _site -type f | sort
+
+      - name: 配置 Pages
+        uses: actions/configure-pages@v5
+
+      - name: 上传站点产物
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: 部署到 GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
