@@ -36,7 +36,9 @@ LABEL = {'沪深300': '沪深300', '中证500': '中证500', '中证1000': '中�
          '科创50': '科创50', '成长100': '成长100', '价值100': '价值100',
          'A500': 'A500', 'SHELTER': '国债ETF'}
 REQUIRED = ['meta.json', 'nav.json', 'signal.json', 'holdings.json',
-            'attribution.json', 'audit.json']
+            'attribution.json', 'evolution.json', 'audit.json']
+
+EVOL = os.path.join(STRAT, 'output5', 'evolution')
 
 
 def r(x, n=6):
@@ -109,6 +111,86 @@ def build_attribution(nav, lg, W):
     total = [r(float(contrib[c].sum())) for c in W.columns]
     return {'assets': asset_cols, 'years': years, 'total': total,
             'total_cost': r(float(cost.sum()))}
+
+
+def build_evolution():
+    """影子账户（旁路监管）接口：复用 evolution_guard 的真实落盘产物，字段延展。
+    不编造：净值/台账/Q/事件/摘要全部来自 strategy/output5/evolution/ 真实回测。"""
+    src = os.path.join(EVOL, '进化看板数据.json')
+    if not os.path.exists(src):
+        return {'available': False}
+    d = json.load(open(src, encoding='utf-8'))
+    s = d['summary']
+    eng = s['engine']
+    led = d['ledger'][-1] if d.get('ledger') else {}
+    events = d.get('events', [])
+    champ = '冠军v1.0'
+    # --- 状态 pills 字段延展（参考 mafc-nav，值全部来自真实数据）---
+    types = [e.get('type', '') for e in events]
+    last_eval = s.get('eval_last', '')
+    # 降级状态：最近一期预警类型映射
+    alerts = str(led.get('alerts', ''))
+    if '回撤预警' in alerts or '冠军退化' in types[-3:]:
+        degrade = 'DEGRADED'
+    elif '因子IC反转' in alerts:
+        degrade = 'WATCH'
+    else:
+        degrade = 'NORMAL'
+    # 实盘观察月数：影子均为历史回灌，无实盘，如实为 0
+    live_months = 0
+    pills = [
+        {'k': '版本', 'v': 's001', 'cls': ''},
+        {'k': '状态', 'v': 'NO_NEW_SAMPLE' if not last_eval else 'EVALUATING', 'cls': 'ok'},
+        {'k': '降级状态', 'v': degrade, 'cls': 'warn' if degrade != 'NORMAL' else ''},
+        {'k': '有效参数', 'v': s.get('final_leader', 'fixed'), 'cls': ''},
+        {'k': '本折跑赢', 'v': '是' if s.get('better_than_champion') else '否',
+         'cls': 'ok' if s.get('better_than_champion') else ''},
+        {'k': '连续跑赢折数', 'v': str(int(s.get('n_promote', 0))), 'cls': ''},
+        {'k': '实盘观察', 'v': str(live_months) + ' 月', 'cls': ''},
+        {'k': '样本类型', 'v': 'historical_dry_run', 'cls': 'warn'},
+    ]
+    # --- 样本外绩效（终值口径，来自 metrics）---
+    met = s.get('metrics', {})
+    def mm(name):
+        v = met.get(name, {})
+        return {'cagr': r(v.get('年化')), 'sharpe': r(v.get('夏普')),
+                'mdd': r(v.get('回撤')), 'calmar': r(v.get('Calmar')),
+                'total': r(v.get('累计'))}
+    # --- 演练月数：净值轴跨度 ---
+    dates_nav = d.get('dates', [])
+    months = 0
+    if len(dates_nav) >= 2:
+        a, b = dates_nav[0][:7], dates_nav[-1][:7]
+        ya, ma = int(a[:4]), int(a[5:]); yb, mb = int(b[:4]), int(b[5:])
+        months = (yb - ya) * 12 + (mb - ma)
+    # --- 解锁降级门槛（引擎超参）---
+    gain = {'eval_freq': eng.get('EVAL_FREQ'), 'warmup': eng.get('WARMUP'),
+            'reward_win': eng.get('REWARD_WIN'), 'alpha': eng.get('ALPHA'),
+            'promote_streak': eng.get('PROMOTE_STREAK'), 'promote_edge': eng.get('PROMOTE_EDGE')}
+    return {
+        'available': True,
+        'as_of': last_eval,
+        'range': s.get('range', []),
+        'pills': pills,
+        'engine': gain,
+        'n_eval': s.get('n_eval'), 'n_events': s.get('n_events'),
+        'n_promote': s.get('n_promote'), 'n_icrev': s.get('n_icrev'),
+        'n_decay': s.get('n_decay'),
+        'final_leader': s.get('final_leader'),
+        'final_Q': {k: r(v, 4) for k, v in s.get('final_Q', {}).items()},
+        'better_than_champion': s.get('better_than_champion', []),
+        'champion_diff': s.get('champion_diff'),
+        'names': d.get('names', []),
+        'dates': dates_nav,
+        'nav': d.get('nav', {}),
+        'metrics': {name: mm(name) for name in d.get('names', [])},
+        'q_hist': d.get('q_hist', []),
+        'events': events,
+        'months': months,
+        'degrade_gate': '连续 ' + str(eng.get('PROMOTE_STREAK')) + ' 折跑赢且 Q 超额 ≥ ' + str(eng.get('PROMOTE_EDGE')),
+        'honest': ('影子挑战者均为 v1.0 参数邻域变体，非独立新模型；仅提名不切换，冠军净值逐日不变。'
+                   '全部为历史回灌演练(historical_dry_run)，非实盘记录，不代表未来收益。'),
+    }
 
 
 def build(sync_info=None):
@@ -212,6 +294,9 @@ def build(sync_info=None):
     # ---- attribution.json ----
     attr = build_attribution(nav, lg, W)
     jwrite('attribution.json', attr)
+
+    # ---- evolution.json（影子账户旁路监管）----
+    jwrite('evolution.json', build_evolution())
 
     # ---- meta.json ----
     fp = hashlib.md5((dates[-1] + '|' + str(len(dates)) + '|' + r(nav_n.iloc[-1], 5).__str__()).encode()).hexdigest()[:16]

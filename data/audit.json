@@ -1,6 +1,32 @@
 {
   "runs": [
     {
+      "run_id": "2026-11-21T02:59:20+08:00",
+      "status": "snapshot",
+      "data_fp": "55791db45e117569",
+      "as_of": "2026-11-20",
+      "steps": [
+        1,
+        4
+      ],
+      "mode": "live",
+      "reason": ""
+    },
+    {
+      "run_id": "2026-11-21T02:59:25+08:00",
+      "data_fp": "55791db45e117569",
+      "bars": 1666,
+      "as_of": "2026-11-20",
+      "status": "snapshot"
+    },
+    {
+      "run_id": "2026-11-21T02:57:22+08:00",
+      "data_fp": "55791db45e117569",
+      "bars": 1666,
+      "as_of": "2026-11-20",
+      "status": "snapshot"
+    },
+    {
       "run_id": "2026-11-20T22:52:44+08:00",
       "status": "snapshot",
       "data_fp": "55791db45e117569",

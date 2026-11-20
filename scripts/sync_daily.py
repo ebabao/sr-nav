@@ -46,7 +46,8 @@ STEPS = ['依赖与快照检查', '抓取最新行情', '数据质量校验', '�
 CORE_RAW = ['pool_沪深300.csv', 'pool_中证500.csv', 'pool_中证1000.csv',
             'pool_科创50.csv', 'pool_价值100.csv', 'pool_成长100.csv',
             'pool_A500.csv', 'etf_shelter_511010.csv']
-CORE_SCRIPTS = ['release_v1.py', 'evolve.py', 'style_adaptive.py', 'style_factors.py']
+CORE_SCRIPTS = ['release_v1.py', 'evolve.py', 'style_adaptive.py', 'style_factors.py',
+                'evolution_guard.py']
 
 
 def log(msg):
@@ -144,6 +145,11 @@ def main():
             # 零网络：直接回放 + 生成接口
             log('[4/7] 策略回放(snapshot)...')
             run_sub('release_v1.py')
+            try:
+                run_sub('evolution_guard.py', timeout=900)
+                log('  [影子] 进化引擎复跑 OK')
+            except Exception as ee:
+                log(f'  [影子 WARN] 进化引擎复跑失败，沿用上版: {str(ee)[:80]}')
             done.append(4)
             import feed
             res = feed.build({'last_sync': run_id, 'status': 'snapshot', 'fallback': False})
@@ -198,6 +204,12 @@ def main():
         # [4/7] 策略回放
         log('[4/7] 策略回放...')
         run_sub('release_v1.py')
+        # 影子账户（旁路监管）：复跑进化引擎刷新影子台账，失败不影响主净值同步
+        try:
+            run_sub('evolution_guard.py', timeout=900)
+            log('  [影子] 进化引擎复跑 OK')
+        except Exception as ee:
+            log(f'  [影子 WARN] 进化引擎复跑失败，沿用上版: {str(ee)[:80]}')
         done.append(4)
 
         # [5/7] 生成接口
