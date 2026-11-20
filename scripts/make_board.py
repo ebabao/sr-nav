@@ -49,6 +49,45 @@ td:first-child,th:first-child{text-align:left}
 .about h3{margin:14px 0 6px;font-size:14px;color:#132a4a}
 .about ul{padding-left:20px}.about li{margin:4px 0}
 footer{text-align:center;color:#95a5b6;font-size:11px;padding:22px 0 8px}
+
+/* ===== 调仓信号卡（数据来自 holdings.json rebalances） ===== */
+.rb{margin:14px 16px 4px;border:1px solid var(--line);border-radius:10px;background:#fbfcff;overflow:hidden}
+.rb.is-shelter{border-color:#e8b64c;background:#fffbe8}
+.rb-hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 14px;border-bottom:1px solid var(--line)}
+.rb-hd .d{font-size:14px;font-weight:750;color:var(--navy)}
+.rb-hd .flag{font-size:11px;font-weight:700;border-radius:999px;padding:3px 10px;background:#eef2f7;color:var(--navy)}
+.rb.is-shelter .rb-hd .flag{background:#f6dda0;color:#7a5a14}
+.rb-grid{display:grid;grid-template-columns:repeat(4,1fr)}
+.rb-i{padding:10px 12px;border-right:1px solid var(--line)}
+.rb-i:last-child{border-right:0}
+.rb-i .k{font-size:10.5px;color:var(--mut);white-space:nowrap}
+.rb-i .v{font-size:15px;font-weight:750;color:var(--navy);margin-top:3px;font-variant-numeric:tabular-nums;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rb-note{padding:9px 14px;font-size:11.5px;color:var(--mut);line-height:1.7;border-top:1px solid var(--line)}
+.rb-note b{color:var(--gold)}
+
+/* ===== 移动端顶栏排版修复（参考 mafc-nav：导航横滚 + 渐隐，副标题窄屏隐藏） ===== */
+header{flex-wrap:nowrap}
+header .brand{flex:0 0 auto;min-width:0}
+header .brand h1{white-space:nowrap}
+header .navlinks{min-width:0;flex:1 1 auto;overflow-x:auto;scrollbar-width:none;
+  -webkit-mask-image:linear-gradient(90deg,#000 90%,transparent);
+  mask-image:linear-gradient(90deg,#000 90%,transparent)}
+header .navlinks::-webkit-scrollbar{display:none}
+header .navlinks a{flex:0 0 auto}
+@media(max-width:640px){
+  header{gap:10px;padding:13px 14px;margin:12px 0}
+  header .brand h1{font-size:18px;letter-spacing:.3px}
+  header .brand .sub{display:none}
+  header .logo{width:32px;height:32px;font-size:13px;flex:0 0 32px}
+  header .navlinks a{padding:6px 9px;font-size:12.5px}
+  .syncbar{font-size:12px}
+  .rb{margin:12px 12px 4px}
+  .rb-grid{grid-template-columns:repeat(2,1fr)}
+  .rb-i:nth-child(2){border-right:0}
+  .rb-i:nth-child(-n+2){border-bottom:1px solid var(--line)}
+}
+@media(max-width:380px){header .brand h1{font-size:16px}}
 '''
 
 # 渲染 JS：复用原逻辑，但把 D 的组装改为 fetch 后注入；末尾初始化改为 async
@@ -56,7 +95,7 @@ RENDER = open(os.path.join(REF, 'board_render.js'), encoding='utf-8').read()
 # 移除原末尾的直接渲染调用，改为由 fetch 流程驱动
 RENDER = RENDER.replace(
     'renderKpis();renderEquity();renderHeat();renderYear();renderAttrib();renderHold();',
-    'window.__renderAll=function(){renderKpis();renderEquity();renderHeat();renderYear();renderAttrib();renderHold();};')
+    'window.__renderAll=function(){renderKpis();renderEquity();renderHeat();renderYear();renderAttrib();renderRebalance();renderHold();};')
 
 HTML = '''<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
@@ -113,6 +152,7 @@ HTML = '''<!DOCTYPE html>
     </div></section>
 
   <section id="holdings"><div class="card"><div class="card-hd"><h2 id="holdTitle">目标仓位</h2></div>
+    <div id="rebalanceSignal"></div>
     <div id="holdBars"></div></div></section>
 
   <section id="about"><div class="card"><div class="card-hd"><h2>策略说明与因子规则</h2></div>
@@ -122,6 +162,37 @@ HTML = '''<!DOCTYPE html>
 </div>
 <script>
 __RENDER__
+// ===== 调仓信号卡：展示最近一次调仓的触发/风控/目标风格 =====
+function renderRebalance(){
+  var box=document.getElementById('rebalanceSignal');
+  if(!box||!D.rebalances||!D.rebalances.length){if(box)box.innerHTML='';return;}
+  var r=D.rebalances[D.rebalances.length-1];
+  var flagMap={crash:'Momentum Crash',both:'双重触发',early:'提前避险',trend:'趋势切换',nan:'常规轮动',hedge:'对冲'};
+  var flag=flagMap[r.trigger]||r.trigger||'—';
+  var shelter=Number(r.shelter_w||0)>0;
+  var riskOff=(r.risk==='OFF');
+  var cb=Number(r.cb_sh||0)>0;
+  box.innerHTML=
+    '<div class="rb'+(shelter?' is-shelter':'')+'">'+
+      '<div class="rb-hd"><span class="d">最近调仓 · '+r.date+'</span>'+
+        '<span class="flag">'+(shelter?'退守避险 · 国债ETF':'目标 '+r.holdings)+'</span></div>'+
+      '<div class="rb-grid">'+
+        '<div class="rb-i"><div class="k">触发类型</div><div class="v">'+flag+'</div></div>'+
+        '<div class="rb-i"><div class="k">风格信号</div><div class="v">'+r.holdings+'</div></div>'+
+        '<div class="rb-i"><div class="k">门控 gate</div><div class="v">'+Number(r.gate||0).toFixed(2)+'</div></div>'+
+        '<div class="rb-i"><div class="k">市场回撤</div><div class="v '+cls(r.mkt_dd)+'">'+pct(r.mkt_dd||0,1)+'</div></div>'+
+      '</div>'+
+      '<div class="rb-note">'+风险解读(r,shelter,riskOff,cb,flag)+'</div>'+
+    '</div>';
+}
+function 风险解读(r,shelter,riskOff,cb,flag){
+  if(shelter){
+    return '当前目标 <b>100% 国债ETF 511010</b>（绝对避险）：'+flag+' 触发'+(cb?' + 回撤断路器满仓国债':'')+
+      '，门控降至 '+Number(r.gate||0).toFixed(2)+'，不押风格；市场回撤 '+pct(r.mkt_dd||0,1)+'。';
+  }
+  return '当前目标 <b>'+r.holdings+'</b>（风格信号生效），风险状态 '+(riskOff?'OFF':'ON')+
+    '，门控 '+Number(r.gate||0).toFixed(2)+'，T+1 收盘执行。';
+}
 // ===== fetch 同源接口并组装 D =====
 async function loadData(){
   const base='data/';
@@ -141,7 +212,8 @@ async function loadData(){
           n_days:meta.bars,winrate:nav.monthly_winrate,last_signal:hold.as_of},
     dates:nav.dates,nav:nav.strategy,z800:nav.benchmark,dd:nav.drawdown,
     heat:nav.monthly,years:hy,attribution:attr,
-    holdings:Object.fromEntries(hold.positions.map(p=>[p.asset,p.weight]))
+    holdings:Object.fromEntries(hold.positions.map(p=>[p.asset,p.weight])),
+    rebalances:hold.rebalances||[]
   };
   // 同步状态条
   const s=meta.sync||{};
