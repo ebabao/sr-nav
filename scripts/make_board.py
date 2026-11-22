@@ -124,6 +124,18 @@ th:first-child,td:first-child{text-align:left}
 thead th{background:#f7f9fd;color:var(--mut);font-weight:650;font-size:11.5px;position:sticky;top:0}
 tbody tr:hover{background:#fafbff}
 .leader{background:#fffbe8;font-weight:700;color:var(--gold)}
+/* 调仓记录表 */
+.rb-count{font-size:11px;font-weight:600;color:var(--mut);margin-left:6px}
+.csv-dl{float:right;font-size:11.5px;font-weight:700;color:var(--navy);text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:4px 10px}
+.csv-dl:hover{background:#eef2f7;border-color:var(--gold)}
+.rbtable{min-width:820px}
+.rbtable td.hl-shelter{background:#fffbe8;color:#7a5a14;font-weight:700}
+.rbtable .tg{display:inline-block;font-size:10.5px;font-weight:700;border-radius:999px;padding:2px 8px;background:#eef2f7;color:var(--navy)}
+.rbtable .tg.crash{background:#fdecea;color:#b3261e}
+.rbtable .tg.both{background:#f6dda0;color:#7a5a14}
+.rbtable .tg.early{background:#fff3d6;color:#8a6300}
+.rbtable .tg.trend{background:#eaf1fb;color:#2c5282}
+.rb-empty{padding:24px;text-align:center;color:var(--mut);font-size:13px}
 
 /* ===== 调仓信号卡 / 目标仓位 ===== */
 .rb{margin:0;border:1px solid var(--line);border-radius:10px;background:#fbfcff;overflow:hidden}
@@ -219,7 +231,7 @@ RENDER = open(os.path.join(REF, 'board_render.js'), encoding='utf-8').read()
 # 移除原末尾的直接渲染调用，改为由 fetch 流程驱动；并加入调仓信号卡
 RENDER = RENDER.replace(
     'renderKpis();renderEquity();renderHeat();renderYear();renderAttrib();renderHold();',
-    'window.__renderAll=function(){renderKpis();renderEquity();renderPit();renderHeat();renderYear();renderAttrib();renderRebalance();renderShadow();renderHold();};')
+    'window.__renderAll=function(){renderKpis();renderEquity();renderPit();renderHeat();renderYear();renderAttrib();renderRebalance();renderRebalanceLog();renderShadow();renderHold();};')
 
 HTML = '''<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
@@ -313,6 +325,23 @@ HTML = '''<!DOCTYPE html>
     <h2>目标仓位与调仓信号</h2>
     <div class="card"><h3>最近调仓信号</h3><div class="body"><div id="rebalanceSignal"></div></div></div>
     <div class="card" style="margin-top:14px"><h3 id="holdTitle">目标仓位</h3><div class="body"><div id="holdBars"></div></div></div>
+    <div class="card" style="margin-top:14px">
+      <h3>最近调仓记录 <span class="rb-count" id="rbCount"></span>
+        <a class="csv-dl" href="data/rebalances.CSV" download="rebalances.CSV" title="下载完整调仓记录">↓ 完整CSV</a></h3>
+      <div class="ctrl" style="padding:10px 14px 0">
+        <span class="lab">类型</span>
+        <div class="seg" id="rbFilter">
+          <button data-f="all" class="on">全部</button><button data-f="crash">Crash</button>
+          <button data-f="both">双重</button><button data-f="early">提前</button><button data-f="trend">趋势</button>
+          <button data-f="shelter">避险</button>
+        </div>
+      </div>
+      <div class="tw"><table class="rbtable"><thead><tr>
+        <th>调仓日</th><th>触发</th><th>风险</th><th>目标风格</th><th>门控</th>
+        <th>市场回撤</th><th>自身回撤</th><th>ER</th><th>避险仓</th><th>断路器</th>
+      </tr></thead><tbody id="rbBody"></tbody></table></div>
+      <div class="body"><div class="note">全部记录来自 v1.0 真实信号日志（T 日信号、T+1 执行），按日期倒序；「避险」筛选为触发退守国债（避险仓位&gt;0）的记录。完整字段（含加速度/波动比/净值高点）见「完整CSV」。</div></div>
+    </div>
   </section>
 
   <section class="sec" id="shadow">
@@ -359,6 +388,38 @@ function 风险解读(r,shelter,riskOff,cb,flag){
   }
   return '当前目标 <b>'+r.holdings+'</b>（风格信号生效），风险状态 '+(riskOff?'OFF':'ON')+
     '，门控 '+Number(r.gate||0).toFixed(2)+'，T+1 收盘执行。';
+}
+// ===== 调仓记录表：全部信号日，倒序，可按类型筛选 =====
+var RB_FILTER='all';
+var TRIG_ZH={crash:'Crash',both:'双重',early:'提前',trend:'趋势',nan:'常规',hedge:'对冲'};
+function renderRebalanceLog(){
+  var body=document.getElementById('rbBody');if(!body)return;
+  var all=(D.rebalances||[]).slice().reverse();  // 倒序：最近在前
+  document.getElementById('rbCount').textContent='共 '+all.length+' 次';
+  var rows=all.filter(function(r){
+    if(RB_FILTER==='all')return true;
+    if(RB_FILTER==='shelter')return Number(r.shelter_w||0)>0;
+    return String(r.trigger)===RB_FILTER;
+  });
+  if(!rows.length){body.innerHTML='<tr><td colspan="10" class="rb-empty">该类型暂无调仓记录</td></tr>';return;}
+  var fnum=function(v,n){return (v===null||v===undefined)?'—':Number(v).toFixed(n);};
+  body.innerHTML=rows.map(function(r){
+    var tg=String(r.trigger), tgCls=['crash','both','early','trend'].indexOf(tg)>=0?tg:'';
+    var shelter=Number(r.shelter_w||0)>0;
+    var target=shelter?'国债ETF':(r.holdings||'—');
+    return '<tr'+(!shelter?'':' class="hl-shelter"')+'>'+
+      '<td>'+r.date+'</td>'+
+      '<td><span class="tg '+tgCls+'">'+(TRIG_ZH[tg]||tg||'—')+'</span></td>'+
+      '<td>'+(r.risk||'—')+'</td>'+
+      '<td>'+target+'</td>'+
+      '<td>'+fnum(r.gate,2)+'</td>'+
+      '<td class="'+cls(r.mkt_dd)+'">'+((r.mkt_dd===null||r.mkt_dd===undefined)?'—':pct(r.mkt_dd,1))+'</td>'+
+      '<td class="'+cls(r.dd_self)+'">'+((r.dd_self===null||r.dd_self===undefined)?'—':pct(r.dd_self,1))+'</td>'+
+      '<td>'+fnum(r.er,3)+'</td>'+
+      '<td>'+fnum(r.shelter_w,2)+'</td>'+
+      '<td>'+fnum(r.cb_sh,2)+'</td>'+
+    '</tr>';
+  }).join('');
 }
 // ===== 净值爬坑体验：水下回撤面积 + 修复统计 =====
 const ddChart=echarts.init(document.getElementById("ddChart"));
@@ -510,6 +571,13 @@ async function loadData(){
   window.__renderAll();
 }
 document.getElementById('refreshBtn').addEventListener('click',loadData);
+// 调仓记录类型筛选
+document.getElementById('rbFilter').addEventListener('click',function(e){
+  var b=e.target.closest('button');if(!b)return;
+  RB_FILTER=b.dataset.f;
+  this.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);});
+  renderRebalanceLog();
+});
 window.addEventListener('resize',()=>{try{ddChart.resize();}catch(e){}try{if(shadowChart)shadowChart.resize();}catch(e){}});
 loadData().catch(e=>{
   document.getElementById('syncPills').innerHTML='<span class="pill err">数据加载失败：'+e.message+'</span>';

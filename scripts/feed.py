@@ -36,7 +36,7 @@ LABEL = {'沪深300': '沪深300', '中证500': '中证500', '中证1000': '中�
          '科创50': '科创50', '成长100': '成长100', '价值100': '价值100',
          'A500': 'A500', 'SHELTER': '国债ETF'}
 REQUIRED = ['meta.json', 'nav.json', 'signal.json', 'holdings.json',
-            'attribution.json', 'evolution.json', 'audit.json']
+            'attribution.json', 'evolution.json', 'audit.json', 'rebalances.CSV']
 
 EVOL = os.path.join(STRAT, 'output5', 'evolution')
 
@@ -254,14 +254,30 @@ def build(sync_info=None):
     last_w = W.iloc[-1]
     holdings = [{'asset': LABEL.get(c, c), 'weight': r(float(last_w[c]), 4)}
                 for c in W.columns if float(last_w[c]) > 0]
-    recent = lg.tail(12).copy()
+    # 完整调仓记录（全部信号日），字段与 v1_信号日志.csv 同源；最近记录在前展示时由看板倒序
     rebalances = []
-    for _, row in recent.iterrows():
+    for _, row in lg.iterrows():
         hld = str(row['holdings']) if 'holdings' in row else ''
         rebalances.append({'date': str(row['date']), 'trigger': str(row['trigger']),
                            'risk': str(row['risk']), 'gate': r(row['gate'], 3),
                            'mkt_dd': r(row['mkt_dd'], 3), 'shelter_w': r(row['shelter_w'], 3),
-                           'cb_sh': r(row['cb_sh'], 3), 'holdings': hld})
+                           'cb_sh': r(row['cb_sh'], 3), 'holdings': hld,
+                           'dd_self': r(row['dd_self'], 3), 'er': r(row['er'], 3),
+                           'accel': r(row['accel'], 5), 'vol_ratio': r(row['vol_ratio'], 3),
+                           'peak': r(row['peak'], 4)})
+    # 完整记录导出为 CSV（用户指定的 rebalances.CSV）
+    rb_cols = ['date', 'trigger', 'risk', 'gate', 'mkt_dd', 'dd_self', 'er',
+               'accel', 'vol_ratio', 'shelter_w', 'cb_sh', 'peak', 'holdings']
+    with open(os.path.join(DATA, 'rebalances.CSV'), 'w', encoding='utf-8-sig', newline='') as f:
+        import csv as _csv
+        wr = _csv.writer(f)
+        zh = {'date': '调仓日期', 'trigger': '触发类型', 'risk': '风险状态', 'gate': '门控',
+              'mkt_dd': '市场回撤', 'dd_self': '自身回撤', 'er': '效率比ER', 'accel': '加速度',
+              'vol_ratio': '波动比', 'shelter_w': '避险仓位', 'cb_sh': '断路器份额',
+              'peak': '净值高点', 'holdings': '目标风格'}
+        wr.writerow([zh[c] for c in rb_cols])
+        for rec in rebalances:
+            wr.writerow([rec.get(c, '') for c in rb_cols])
     holdings_obj = {
         'as_of': str(W.index[-1].date()),
         'positions': holdings,
