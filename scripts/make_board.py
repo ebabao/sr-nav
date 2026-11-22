@@ -129,7 +129,11 @@ tbody tr:hover{background:#fafbff}
 .csv-dl{float:right;font-size:11.5px;font-weight:700;color:var(--navy);text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:4px 10px}
 .csv-dl:hover{background:#eef2f7;border-color:var(--gold)}
 .rbtable{min-width:820px}
+.rbtable.wide{min-width:1080px}
+.rbtable td.eff{color:var(--mut);font-size:11.5px}
+.rbtable td.desc{white-space:normal;min-width:150px;font-weight:600}
 .rbtable td.hl-shelter{background:#fffbe8;color:#7a5a14;font-weight:700}
+.rbtable tr.hl-shelter td.desc{color:#7a5a14}
 .rbtable .tg{display:inline-block;font-size:10.5px;font-weight:700;border-radius:999px;padding:2px 8px;background:#eef2f7;color:var(--navy)}
 .rbtable .tg.crash{background:#fdecea;color:#b3261e}
 .rbtable .tg.both{background:#f6dda0;color:#7a5a14}
@@ -336,11 +340,12 @@ HTML = '''<!DOCTYPE html>
           <button data-f="shelter">避险</button>
         </div>
       </div>
-      <div class="tw"><table class="rbtable"><thead><tr>
-        <th>调仓日</th><th>触发</th><th>风险</th><th>目标风格</th><th>门控</th>
-        <th>市场回撤</th><th>自身回撤</th><th>ER</th><th>避险仓</th><th>断路器</th>
+      <div class="tw"><table class="rbtable wide"><thead><tr>
+        <th>信号日T</th><th>生效日T+1</th><th>触发</th><th>风险</th>
+        <th>目标描述</th><th>生效日实际持仓</th><th>门控</th>
+        <th>市场回撤</th><th>ER</th><th>避险仓</th>
       </tr></thead><tbody id="rbBody"></tbody></table></div>
-      <div class="body"><div class="note">全部记录来自 v1.0 真实信号日志（T 日信号、T+1 执行），按日期倒序；「避险」筛选为触发退守国债（避险仓位&gt;0）的记录。完整字段（含加速度/波动比/净值高点）见「完整CSV」。</div></div>
+      <div class="body"><div class="note">表格默认显示<b>最近 20 条</b>（按信号日倒序），<b>全部记录请下载「完整CSV」</b>；筛选按全部记录匹配后再取最近 20 条。数据来自 v1.0 真实信号日志。<b>T 日收盘产生信号、T+1 成交</b>：「生效日」为数据轴上信号日的下一个交易日；「目标描述」区分纯风格 / 风格+国债按比例 / 100%国债；「实际持仓」为生效日从权重表读取的真实仓位，用于核对目标是否落地。Early（动能减速）在此版只记录不触发避险；「避险」筛选为避险仓位&gt;0 的记录。</div></div>
     </div>
   </section>
 
@@ -395,29 +400,33 @@ var TRIG_ZH={crash:'Crash',both:'双重',early:'提前',trend:'趋势',nan:'常�
 function renderRebalanceLog(){
   var body=document.getElementById('rbBody');if(!body)return;
   var all=(D.rebalances||[]).slice().reverse();  // 倒序：最近在前
-  document.getElementById('rbCount').textContent='共 '+all.length+' 次';
   var rows=all.filter(function(r){
     if(RB_FILTER==='all')return true;
     if(RB_FILTER==='shelter')return Number(r.shelter_w||0)>0;
     return String(r.trigger)===RB_FILTER;
   });
-  if(!rows.length){body.innerHTML='<tr><td colspan="10" class="rb-empty">该类型暂无调仓记录</td></tr>';return;}
+  var LIMIT=20, shown=rows.slice(0,LIMIT);  // 仅显示最近20条，完整记录见CSV
+  document.getElementById('rbCount').textContent = rows.length>LIMIT
+    ? '共 '+all.length+' 次 · 仅显示最近 '+LIMIT+' 条'
+    : '共 '+all.length+' 次 · 显示 '+rows.length+' 条';
+  if(!shown.length){body.innerHTML='<tr><td colspan="10" class="rb-empty">该类型暂无调仓记录</td></tr>';return;}
   var fnum=function(v,n){return (v===null||v===undefined)?'—':Number(v).toFixed(n);};
-  body.innerHTML=rows.map(function(r){
+  body.innerHTML=shown.map(function(r){
     var tg=String(r.trigger), tgCls=['crash','both','early','trend'].indexOf(tg)>=0?tg:'';
     var shelter=Number(r.shelter_w||0)>0;
-    var target=shelter?'国债ETF':(r.holdings||'—');
+    var desc=r.target_desc||((r.holdings||'—')+' 100%');
+    var actual=r.actual||'—';
     return '<tr'+(!shelter?'':' class="hl-shelter"')+'>'+
       '<td>'+r.date+'</td>'+
+      '<td class="eff">'+r.eff_date+'</td>'+
       '<td><span class="tg '+tgCls+'">'+(TRIG_ZH[tg]||tg||'—')+'</span></td>'+
       '<td>'+(r.risk||'—')+'</td>'+
-      '<td>'+target+'</td>'+
+      '<td class="desc">'+desc+'</td>'+
+      '<td class="desc">'+actual+'</td>'+
       '<td>'+fnum(r.gate,2)+'</td>'+
       '<td class="'+cls(r.mkt_dd)+'">'+((r.mkt_dd===null||r.mkt_dd===undefined)?'—':pct(r.mkt_dd,1))+'</td>'+
-      '<td class="'+cls(r.dd_self)+'">'+((r.dd_self===null||r.dd_self===undefined)?'—':pct(r.dd_self,1))+'</td>'+
       '<td>'+fnum(r.er,3)+'</td>'+
       '<td>'+fnum(r.shelter_w,2)+'</td>'+
-      '<td>'+fnum(r.cb_sh,2)+'</td>'+
     '</tr>';
   }).join('');
 }

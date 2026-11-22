@@ -255,26 +255,69 @@ def build(sync_info=None):
     holdings = [{'asset': LABEL.get(c, c), 'weight': r(float(last_w[c]), 4)}
                 for c in W.columns if float(last_w[c]) > 0]
     # 完整调仓记录（全部信号日），字段与 v1_信号日志.csv 同源；最近记录在前展示时由看板倒序
+    # 关键：signal 日为 T，实际成交在 T+1（数据轴上的下一个交易日，非日历日）
+    trade_dates = list(nav.index)
+    tpos = {d: i for i, d in enumerate(trade_dates)}
+    def eff_date_of(ds):
+        """信号日 T 在数据轴上的下一个交易日（T+1 成交日）"""
+        try:
+            d = pd.Timestamp(ds)
+        except Exception:
+            return ''
+        i = tpos.get(d)
+        return trade_dates[i + 1].strftime('%Y-%m-%d') if (i is not None and i + 1 < len(trade_dates)) else ''
+
+    def target_desc_of(hld, sw):
+        """精确目标描述：区分纯风格 / 风格+国债按比例 / 100%国债"""
+        sw = float(sw or 0)
+        eq = 1 - sw
+        if sw <= 0.0005:
+            return (hld or '—') + ' 100%'
+        if sw >= 0.9995:
+            return '国债ETF 100%'
+        return (hld or '风格') + ' ' + str(int(round(eq * 100))) + '% + 国债 ' + str(int(round(sw * 100))) + '%'
+
+    def actual_of(eff):
+        """生效日实际持仓（从 W 读取真实权重，用于核对目标是否落地）"""
+        if not eff:
+            return ''
+        try:
+            row = W.loc[pd.Timestamp(eff)]
+        except Exception:
+            return ''
+        parts = []
+        for c in W.columns:
+            v = float(row[c])
+            if v > 0.005:
+                parts.append(LABEL.get(c, c) + ' ' + str(int(round(v * 100))) + '%')
+        return ' + '.join(parts)
+
     rebalances = []
     for _, row in lg.iterrows():
         hld = str(row['holdings']) if 'holdings' in row else ''
-        rebalances.append({'date': str(row['date']), 'trigger': str(row['trigger']),
+        sw = r(row['shelter_w'], 3)
+        eff = eff_date_of(row['date'])
+        rebalances.append({'date': str(row['date']), 'eff_date': eff,
+                           'trigger': str(row['trigger']),
                            'risk': str(row['risk']), 'gate': r(row['gate'], 3),
-                           'mkt_dd': r(row['mkt_dd'], 3), 'shelter_w': r(row['shelter_w'], 3),
+                           'mkt_dd': r(row['mkt_dd'], 3), 'shelter_w': sw,
                            'cb_sh': r(row['cb_sh'], 3), 'holdings': hld,
+                           'target_desc': target_desc_of(hld, sw), 'actual': actual_of(eff),
                            'dd_self': r(row['dd_self'], 3), 'er': r(row['er'], 3),
                            'accel': r(row['accel'], 5), 'vol_ratio': r(row['vol_ratio'], 3),
                            'peak': r(row['peak'], 4)})
     # 完整记录导出为 CSV（用户指定的 rebalances.CSV）
-    rb_cols = ['date', 'trigger', 'risk', 'gate', 'mkt_dd', 'dd_self', 'er',
-               'accel', 'vol_ratio', 'shelter_w', 'cb_sh', 'peak', 'holdings']
+    rb_cols = ['date', 'eff_date', 'trigger', 'risk', 'gate', 'mkt_dd', 'dd_self', 'er',
+               'accel', 'vol_ratio', 'shelter_w', 'cb_sh', 'peak', 'holdings',
+               'target_desc', 'actual']
     with open(os.path.join(DATA, 'rebalances.CSV'), 'w', encoding='utf-8-sig', newline='') as f:
         import csv as _csv
         wr = _csv.writer(f)
-        zh = {'date': '调仓日期', 'trigger': '触发类型', 'risk': '风险状态', 'gate': '门控',
-              'mkt_dd': '市场回撤', 'dd_self': '自身回撤', 'er': '效率比ER', 'accel': '加速度',
-              'vol_ratio': '波动比', 'shelter_w': '避险仓位', 'cb_sh': '断路器份额',
-              'peak': '净值高点', 'holdings': '目标风格'}
+        zh = {'date': '信号日T', 'eff_date': '生效日T+1', 'trigger': '触发类型', 'risk': '风险状态',
+              'gate': '门控', 'mkt_dd': '市场回撤', 'dd_self': '自身回撤', 'er': '效率比ER',
+              'accel': '加速度', 'vol_ratio': '波动比', 'shelter_w': '避险仓位',
+              'cb_sh': '断路器份额', 'peak': '净值高点', 'holdings': '风格信号',
+              'target_desc': '目标描述', 'actual': '生效日实际持仓'}
         wr.writerow([zh[c] for c in rb_cols])
         for rec in rebalances:
             wr.writerow([rec.get(c, '') for c in rb_cols])
