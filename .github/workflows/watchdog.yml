@@ -49,3 +49,22 @@ jobs:
           else
             echo "✅ 同步链正常，无需重启" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: 部署一致性自愈（线上落后于仓库则重新部署）
+        id: deploy_check
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          python scripts/check_deploy.py --restart-deploy | tee /tmp/deploy.txt
+          DC=$?
+          set -e
+          cat /tmp/deploy.txt >> "$GITHUB_STEP_SUMMARY"
+          if [ "$DC" = "2" ]; then
+            echo "⚠️ 线上看板落后于仓库，已下发 workflow_dispatch 重新部署" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$DC" = "1" ]; then
+            echo "⚠️ 线上 meta 读取失败，本轮跳过部署自愈" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "✅ 线上部署与仓库一致，无需重新部署" >> "$GITHUB_STEP_SUMMARY"
+          fi
