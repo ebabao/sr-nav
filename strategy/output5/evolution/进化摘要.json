@@ -8,7 +8,7 @@
     "PROMOTE_STREAK": 5,
     "PROMOTE_EDGE": 0.08
   },
-  "champion_diff": 8.881784197001252e-16,
+  "champion_diff": 0.0,
   "n_eval": 71,
   "n_events": 30,
   "n_promote": 3,
@@ -24,7 +24,7 @@
   },
   "range": [
     "2020-01-02",
-    "2026-11-23"
+    "2026-11-24"
   ],
   "metrics": {
     "冠军v1.0": {
