@@ -1,6 +1,92 @@
 {
   "runs": [
     {
+      "run_id": "2026-11-27T11:54:05+08:00",
+      "status": "ok",
+      "data_fp": "da4d3754c54c58b5",
+      "as_of": "2026-11-26",
+      "steps": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "mode": "live",
+      "reason": "",
+      "fetch": {
+        "run_date": "2026-11-27",
+        "range": [
+          "20261018",
+          "20261127"
+        ],
+        "items": {
+          "沪深300": {
+            "src": "csindex:H00300",
+            "status": "ok",
+            "added": 1,
+            "last": "2026-11-26"
+          },
+          "中证500": {
+            "src": "csindex:H00905",
+            "status": "ok",
+            "added": 1,
+            "last": "2026-11-26"
+          },
+          "中证1000": {
+            "src": "csindex:H00852",
+            "status": "ok",
+            "added": 1,
+            "last": "2026-11-26"
+          },
+          "科创50": {
+            "src": "csindex:000688",
+            "status": "ok",
+            "added": 1,
+            "last": "2026-11-26"
+          },
+          "A500": {
+            "src": "csindex:000510",
+            "status": "ok",
+            "added": 1,
+            "last": "2026-11-26"
+          },
+          "中证800": {
+            "src": "csindex:000906",
+            "status": "ok",
+            "added": 1,
+            "last": "2026-11-26"
+          },
+          "价值100": {
+            "src": "cni:480081",
+            "status": "ok",
+            "added": 1,
+            "last": "2026-11-26"
+          },
+          "成长100": {
+            "src": "cni:480080",
+            "status": "ok",
+            "added": 1,
+            "last": "2026-11-26"
+          },
+          "SHELTER": {
+            "src": "sina:sh511010",
+            "status": "ok",
+            "added": 1,
+            "last": "2026-11-26"
+          }
+        }
+      }
+    },
+    {
+      "run_id": "2026-11-27T11:54:20+08:00",
+      "data_fp": "da4d3754c54c58b5",
+      "bars": 1670,
+      "as_of": "2026-11-26",
+      "status": "live"
+    },
+    {
       "run_id": "2026-11-26T11:52:22+08:00",
       "status": "ok",
       "data_fp": "e00914377a20876f",
